@@ -247,7 +247,6 @@ class CollectTags
     private function getProfile(AccountResponse $AccountResponse): array
     {
         $profile = [];
-        $profile_tags = ['Name', 'About', 'Website'];
         $Data = $AccountResponse->getData();
         foreach ($Data->getKeys() as $key) {
             $value = trim($Data->get($key));
@@ -255,9 +254,13 @@ class CollectTags
                 continue;
             }
 
-            $key = preg_replace('/\s?\d+\Z/', '', $key);
+            if (!preg_match('/^\s*(?<tag>[a-z0-9_]+?)\s*\d*\s*$/i', $key, $m)) {
+                continue;
+            }
+            $key = $m['tag'];
 
-            if (!in_array($key, $profile_tags)) {
+            // Ignore Links
+            if (self::validateStellarAccountIdFormat($value)) {
                 continue;
             }
 
