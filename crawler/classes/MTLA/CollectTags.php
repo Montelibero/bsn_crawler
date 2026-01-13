@@ -150,7 +150,7 @@ class CollectTags
         });
     }
 
-    public function isDebugMode(bool $debug_mode = null): bool
+    public function isDebugMode(?bool $debug_mode = null): bool
     {
         if ($debug_mode !== null) {
             $this->debug_mode = $debug_mode;
@@ -177,7 +177,7 @@ class CollectTags
             return false;
         }
 
-        return preg_match('/^G[A-Z2-7]{55}$/', $account_id);
+        return (bool) preg_match('/^G[A-Z2-7]{55}$/', $account_id);
     }
 
     public static function validateSignature(?string $string): bool

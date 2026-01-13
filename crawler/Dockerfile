@@ -1,4 +1,4 @@
-FROM php:8.2-cli-alpine
+FROM php:8.5-cli-alpine
 
 RUN apk add --no-cache \
     libzip-dev \
@@ -9,7 +9,7 @@ RUN apk add --no-cache \
     unzip \
     pkgconfig
 
-RUN docker-php-ext-install bcmath curl soap zip
+RUN docker-php-ext-install bcmath curl soap zip pcntl
 
 WORKDIR /usr/src/crawler
 

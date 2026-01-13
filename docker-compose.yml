@@ -4,6 +4,7 @@ services:
       context: ./crawler
     volumes:
       - bsn_shared_data:/data/public
+#      - ./crawler:/usr/src/crawler
 
 volumes:
   bsn_shared_data:
