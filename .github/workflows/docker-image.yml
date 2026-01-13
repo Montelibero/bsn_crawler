@@ -36,7 +36,6 @@ jobs:
         working-directory: ./crawler
         run: |
           docker build \
-            --target prod \
             -t $REGISTRY/$IMAGE_NAME:latest .
 
       - name: Push APP Docker image
