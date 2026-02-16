@@ -291,7 +291,7 @@ class CollectTags
                 continue;
             }
 
-            if (!preg_match('/^\s*(?<tag>[a-z0-9_]+?)\s*(:\s*(?<extra>[a-z0-9_]+?))?\s*\d*\s*$/i', $key, $m)) {
+            if (!preg_match('/^\s*(?<tag>[a-z0-9_]+?)\s*\d*\s*$/i', $key, $m)) {
                 continue;
             }
 
