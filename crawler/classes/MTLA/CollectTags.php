@@ -25,7 +25,6 @@ class CollectTags
     private array $balance_tokens = [];
 
     public array $sort_tags_example = [
-        'Signer',
         'A', 'B', 'C', 'D',
         'Spouse', 'Love', 'OneFamily', 'Guardian', 'Ward', 'Sympathy', 'Divorce',
         'Employer', 'Employee', 'Contractor', 'Client', 'Partnership', 'Collaboration',
@@ -205,9 +204,7 @@ class CollectTags
 
         $signatures = $this->getSignatures($AccountResponse);
 
-        if ($signers = $this->getSigners($AccountResponse)) {
-            $tags['Signer'] = $signers;
-        }
+        $multisig = $this->getMultisig($AccountResponse);
 
         $result = [];
         if ($profile) {
@@ -219,6 +216,9 @@ class CollectTags
         }
         if ($signatures) {
             $result['signatures'] = $signatures;
+        }
+        if ($multisig) {
+            $result['multisig'] = $multisig;
         }
 
         $this->accounts[$account_id] = $result;
@@ -297,11 +297,6 @@ class CollectTags
 
             $key = $m['tag'] . (isset($m['extra']) ? ':' . $m['extra'] : '');
 
-            // Reserved
-            if ($key === 'Signer') {
-                continue;
-            }
-
             if (!array_key_exists($key, $tags)) {
                 $tags[$key] = [];
             }
@@ -334,23 +329,100 @@ class CollectTags
         return $signatures;
     }
 
-    private function getSigners(AccountResponse $AccountResponse): array
+    private function getMultisig(AccountResponse $AccountResponse): ?array
     {
-        $co_signers = [];
+        $master_key = 0;
+        $signers = [];
         $Signers = $AccountResponse->getSigners();
         /** @var AccountSignerResponse $Signer */
         foreach ($Signers->toArray() as $Signer) {
             $key = $Signer->getKey();
+            $weight = $this->getSignerWeight($Signer);
+
             if ($key === $AccountResponse->getAccountId()) {
+                $master_key = $weight;
                 continue;
             }
             if (!self::validateStellarAccountIdFormat($key)) {
                 continue;
             }
-            $co_signers[] = $key;
+            $signers[] = [$key, $weight];
         }
 
-        return $co_signers;
+        if (!$signers) {
+            return null;
+        }
+
+        return [
+            'thresholds' => $this->getThresholds($AccountResponse),
+            'master_key' => $master_key,
+            'signers' => $signers,
+        ];
+    }
+
+    private function getSignerWeight(AccountSignerResponse $Signer): int
+    {
+        if (method_exists($Signer, 'getWeight')) {
+            return (int) $Signer->getWeight();
+        }
+
+        if (property_exists($Signer, 'weight')) {
+            return (int) $Signer->weight;
+        }
+
+        return 0;
+    }
+
+    private function getThresholds(AccountResponse $AccountResponse): array
+    {
+        $Thresholds = method_exists($AccountResponse, 'getThresholds')
+            ? $AccountResponse->getThresholds()
+            : null;
+
+        return [
+            $this->extractThresholdValue($AccountResponse, $Thresholds, 'Low'),
+            $this->extractThresholdValue($AccountResponse, $Thresholds, 'Med'),
+            $this->extractThresholdValue($AccountResponse, $Thresholds, 'High'),
+        ];
+    }
+
+    private function extractThresholdValue(AccountResponse $AccountResponse, mixed $Thresholds, string $level): int
+    {
+        $account_method = 'get' . $level . 'Threshold';
+        if (method_exists($AccountResponse, $account_method)) {
+            return (int) $AccountResponse->$account_method();
+        }
+
+        if (is_object($Thresholds)) {
+            $threshold_method = 'get' . $level . 'Threshold';
+            if (method_exists($Thresholds, $threshold_method)) {
+                return (int) $Thresholds->$threshold_method();
+            }
+
+            $property = strtolower($level) . 'Threshold';
+            if (property_exists($Thresholds, $property)) {
+                return (int) $Thresholds->$property;
+            }
+
+            $property = strtolower($level) . '_threshold';
+            if (property_exists($Thresholds, $property)) {
+                return (int) $Thresholds->$property;
+            }
+        }
+
+        if (is_array($Thresholds)) {
+            $camel_key = strtolower($level) . 'Threshold';
+            if (array_key_exists($camel_key, $Thresholds)) {
+                return (int) $Thresholds[$camel_key];
+            }
+
+            $snake_key = strtolower($level) . '_threshold';
+            if (array_key_exists($snake_key, $Thresholds)) {
+                return (int) $Thresholds[$snake_key];
+            }
+        }
+
+        return 0;
     }
 
     private function processData(): array
@@ -394,6 +466,9 @@ class CollectTags
             }
             if (array_key_exists('signatures', $data) && $data['signatures']) {
                 $result_data['signatures'] = $data['signatures'];
+            }
+            if (array_key_exists('multisig', $data) && $data['multisig']) {
+                $result_data['multisig'] = $data['multisig'];
             }
 
             $result[$id] = $result_data;
