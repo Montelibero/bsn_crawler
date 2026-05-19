@@ -6,6 +6,113 @@ use Twig\Loader\FilesystemLoader;
 
 require 'vendor/autoload.php';
 
+const KNOWN_TOKENS_URL = 'https://bsn.expert/tokens/';
+const KNOWN_TOKENS_CACHE_FILE = 'known_tokens.json';
+const KNOWN_TOKENS_REQUEST_TIMEOUT = 15;
+
+function loadKnownTokens(MTLA\CollectTags $CollectTags): array
+{
+    try {
+        $json = fetchKnownTokensJson(KNOWN_TOKENS_URL, KNOWN_TOKENS_REQUEST_TIMEOUT);
+        $tokens = parseKnownTokensJson($json, KNOWN_TOKENS_URL);
+        if (file_put_contents(KNOWN_TOKENS_CACHE_FILE, $json) === false) {
+            $CollectTags->print('Known tokens cache update failed: ' . KNOWN_TOKENS_CACHE_FILE);
+        }
+
+        return $tokens;
+    } catch (RuntimeException $e) {
+        $CollectTags->print(
+            'Known tokens request failed: ' . $e->getMessage()
+            . '; using ' . KNOWN_TOKENS_CACHE_FILE
+        );
+
+        if (!is_readable(KNOWN_TOKENS_CACHE_FILE)) {
+            throw new RuntimeException(
+                'Known tokens cache is not readable: ' . KNOWN_TOKENS_CACHE_FILE,
+                previous: $e
+            );
+        }
+
+        $json = file_get_contents(KNOWN_TOKENS_CACHE_FILE);
+        if ($json === false) {
+            throw new RuntimeException(
+                'Known tokens cache cannot be read: ' . KNOWN_TOKENS_CACHE_FILE,
+                previous: $e
+            );
+        }
+
+        return parseKnownTokensJson($json, KNOWN_TOKENS_CACHE_FILE);
+    }
+}
+
+function fetchKnownTokensJson(string $url, int $timeout): string
+{
+    $curl = curl_init($url);
+    if ($curl === false) {
+        throw new RuntimeException('curl initialization failed');
+    }
+
+    curl_setopt_array($curl, [
+        CURLOPT_CONNECTTIMEOUT => $timeout,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_HTTPHEADER => [
+            'Accept: application/json',
+        ],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => $timeout,
+    ]);
+
+    $response = curl_exec($curl);
+    $curl_errno = curl_errno($curl);
+    $curl_error = curl_error($curl);
+    $http_code = (int) curl_getinfo($curl, CURLINFO_HTTP_CODE);
+
+    if ($response === false) {
+        throw new RuntimeException('curl error ' . $curl_errno . ': ' . $curl_error);
+    }
+
+    if ($http_code < 200 || $http_code >= 300) {
+        throw new RuntimeException('unexpected HTTP status ' . $http_code);
+    }
+
+    return $response;
+}
+
+function parseKnownTokensJson(string $json, string $source): array
+{
+    $tokens = json_decode($json, true);
+    if (!is_array($tokens)) {
+        throw new RuntimeException('invalid known tokens JSON from ' . $source);
+    }
+
+    foreach ($tokens as $code => $token) {
+        if (!is_string($code) || $code === '') {
+            throw new RuntimeException('invalid known token code in ' . $source);
+        }
+
+        if (
+            !is_array($token)
+            || !array_key_exists('issuer', $token)
+            || !is_string($token['issuer'])
+            || !MTLA\CollectTags::validateStellarAccountIdFormat($token['issuer'])
+        ) {
+            throw new RuntimeException('invalid known token issuer for ' . $code . ' in ' . $source);
+        }
+    }
+
+    return $tokens;
+}
+
+function buildKnownTokenKeys(array $knownTokens): array
+{
+    $tokens = [];
+    foreach ($knownTokens as $code => $token) {
+        $tokens[] = $code . '-' . $token['issuer'];
+    }
+
+    return $tokens;
+}
+
 $CollectTags = new MTLA\CollectTags(
     StellarSDK::getPublicNetInstance()
 );
@@ -14,23 +121,8 @@ $CollectTags->isDebugMode(false);
 
 chdir('/data/public/');
 
-$tokens = [
-    'Agora-GBGGX7QD3JCPFKOJTLBRAFU3SIME3WSNDXETWI63EDCORLBB6HIP2CRR',
-    'BTCMTL-GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V',
-    'EURMTL-GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V',
-    'EURTPS-GDEF73CXYOZXQ6XLUN55UBCW5YTIU4KVZEPOI6WJSREN3DMOBLVLZTOP',
-    'GPA-GBGGX7QD3JCPFKOJTLBRAFU3SIME3WSNDXETWI63EDCORLBB6HIP2CRR',
-    'MTL-GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V',
-    'MTLAC-GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA',
-    'MTLAP-GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA',
-    'MTLRECT-GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V',
-    'SATSMTL-GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V',
-    'TIC-GBJ3HT6EDPWOUS3CUSIJW5A4M7ASIKNW4WFTLG76AAT5IE6VGVN47TIC',
-    'TOC-GBJ3HT6EDPWOUS3CUSIJW5A4M7ASIKNW4WFTLG76AAT5IE6VGVN47TIC',
-    'TPS-GAODFS2M4NSBFGKVNG6SEECI3DWU2GXQKG6MUBYJEIIINVIPZULCJTPS',
-    'USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
-    'USDM-GDHDC4GBNPMENZAOBB4NCQ25TGZPDRK6ZGWUGSI22TVFATOLRPSUUSDM',
-];
+$knownTokens = loadKnownTokens($CollectTags);
+$tokens = buildKnownTokenKeys($knownTokens);
 foreach ($tokens as $token) {
     $CollectTags->addBalanceToken($token);
 }
@@ -43,7 +135,7 @@ $data = $CollectTags->run();
 
 $result = [
     'createDate' => (new DateTime('now', new DateTimeZone('UTC')))->format('c'),
-    'knownTokens' => $tokens,
+    'knownTokens' => $knownTokens,
     'usedSources' => $CollectTags->getSources(),
     'accounts' => $data,
 ];
