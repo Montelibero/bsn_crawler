@@ -8,6 +8,7 @@ require 'vendor/autoload.php';
 
 const KNOWN_TOKENS_URL = 'https://bsn.expert/tokens/';
 const KNOWN_TOKENS_CACHE_FILE = 'known_tokens.json';
+const KNOWN_TOKENS_SEED_FILE = __DIR__ . '/known_tokens.json';
 const KNOWN_TOKENS_REQUEST_TIMEOUT = 15;
 
 function loadKnownTokens(MTLA\CollectTags $CollectTags): array
@@ -21,27 +22,38 @@ function loadKnownTokens(MTLA\CollectTags $CollectTags): array
 
         return $tokens;
     } catch (RuntimeException $e) {
-        $CollectTags->print(
-            'Known tokens request failed: ' . $e->getMessage()
-            . '; using ' . KNOWN_TOKENS_CACHE_FILE
-        );
+        $CollectTags->print('Known tokens request failed: ' . $e->getMessage());
 
-        if (!is_readable(KNOWN_TOKENS_CACHE_FILE)) {
-            throw new RuntimeException(
-                'Known tokens cache is not readable: ' . KNOWN_TOKENS_CACHE_FILE,
-                previous: $e
-            );
+        foreach (array_unique([KNOWN_TOKENS_CACHE_FILE, KNOWN_TOKENS_SEED_FILE]) as $fallback_file) {
+            if (!is_readable($fallback_file)) {
+                continue;
+            }
+
+            $json = file_get_contents($fallback_file);
+            if ($json === false) {
+                $CollectTags->print('Known tokens fallback cannot be read: ' . $fallback_file);
+                continue;
+            }
+
+            try {
+                $tokens = parseKnownTokensJson($json, $fallback_file);
+            } catch (RuntimeException $fallbackException) {
+                $CollectTags->print($fallbackException->getMessage());
+                continue;
+            }
+
+            $CollectTags->print('Using known tokens fallback: ' . $fallback_file);
+            if (
+                $fallback_file !== KNOWN_TOKENS_CACHE_FILE
+                && file_put_contents(KNOWN_TOKENS_CACHE_FILE, $json) === false
+            ) {
+                $CollectTags->print('Known tokens cache restore failed: ' . KNOWN_TOKENS_CACHE_FILE);
+            }
+
+            return $tokens;
         }
 
-        $json = file_get_contents(KNOWN_TOKENS_CACHE_FILE);
-        if ($json === false) {
-            throw new RuntimeException(
-                'Known tokens cache cannot be read: ' . KNOWN_TOKENS_CACHE_FILE,
-                previous: $e
-            );
-        }
-
-        return parseKnownTokensJson($json, KNOWN_TOKENS_CACHE_FILE);
+        throw new RuntimeException('Known tokens fallback is unavailable', previous: $e);
     }
 }
 
@@ -58,6 +70,7 @@ function fetchKnownTokensJson(string $url, int $timeout): string
         CURLOPT_HTTPHEADER => [
             'Accept: application/json',
         ],
+        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT => $timeout,
     ]);
