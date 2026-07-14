@@ -188,6 +188,13 @@ class CollectTags
         return preg_match(self::SHA256_HASH_REGEX, $string);
     }
 
+    public static function isTextManageDataValue(string $value): bool
+    {
+        return preg_match('//u', $value) === 1
+            && preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $value) !== 1
+            && preg_match('/[\x{0080}-\x{009F}]/u', $value) !== 1;
+    }
+
     private function processStellarAccount(AccountResponse $AccountResponse): void
     {
         $account_id = $AccountResponse->getAccountId();
@@ -249,7 +256,17 @@ class CollectTags
         $profile = [];
         $Data = $AccountResponse->getData();
         foreach ($Data->getKeys() as $key) {
-            $value = trim($Data->get($key));
+            $value = $Data->get($key);
+            if (!self::isTextManageDataValue($value)) {
+                $this->print(sprintf(
+                    'Skipping non-text ManageData value: account=%s key=%s',
+                    $AccountResponse->getAccountId(),
+                    $key
+                ));
+                continue;
+            }
+
+            $value = trim($value);
             if ($value === '') {
                 continue;
             }

@@ -17,4 +17,7 @@ COPY . .
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 RUN composer install --no-dev --optimize-autoloader
 
+HEALTHCHECK --interval=60s --timeout=10s --start-period=10m --retries=3 \
+    CMD ["php", "healthcheck.php", "/data/public", "900"]
+
 CMD ["sh", "init.sh"]

@@ -5,9 +5,12 @@ while true; do
 
   echo "[crawler] starting cycle: $(date)"
 
-  php get_tags.php
-
-  echo "[crawler] done: $(date)"
+  if php get_tags.php; then
+    echo "[crawler] done: $(date)"
+  else
+    status=$?
+    echo "[crawler] failed with exit code $status: $(date)" >&2
+  fi
 
   end_time=$(date +%s)
   elapsed=$((end_time - start_time))

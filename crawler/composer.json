@@ -18,5 +18,8 @@
     "psr-4": {
       "": "classes/"
     }
+  },
+  "scripts": {
+    "test": "php tests/run.php"
   }
 }

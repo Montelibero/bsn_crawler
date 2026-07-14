@@ -1,5 +1,7 @@
 <?php
 
+use GuzzleHttp\Client;
+use MTLA\SnapshotPublisher;
 use Soneso\StellarSDK\StellarSDK;
 use Twig\Environment;
 use Twig\Loader\FilesystemLoader;
@@ -10,13 +12,17 @@ const KNOWN_TOKENS_URL = 'https://bsn.expert/tokens/';
 const KNOWN_TOKENS_CACHE_FILE = 'known_tokens.json';
 const KNOWN_TOKENS_SEED_FILE = __DIR__ . '/known_tokens.json';
 const KNOWN_TOKENS_REQUEST_TIMEOUT = 15;
+const HORIZON_URL = 'https://horizon.stellar.org';
+const HORIZON_CONNECT_TIMEOUT = 10;
+const HORIZON_REQUEST_TIMEOUT = 30;
+const PUBLIC_DIRECTORY = '/data/public';
 
 function loadKnownTokens(MTLA\CollectTags $CollectTags): array
 {
     try {
         $json = fetchKnownTokensJson(KNOWN_TOKENS_URL, KNOWN_TOKENS_REQUEST_TIMEOUT);
         $tokens = parseKnownTokensJson($json, KNOWN_TOKENS_URL);
-        if (file_put_contents(KNOWN_TOKENS_CACHE_FILE, $json) === false) {
+        if (!writeCacheFile(KNOWN_TOKENS_CACHE_FILE, $json)) {
             $CollectTags->print('Known tokens cache update failed: ' . KNOWN_TOKENS_CACHE_FILE);
         }
 
@@ -45,7 +51,7 @@ function loadKnownTokens(MTLA\CollectTags $CollectTags): array
             $CollectTags->print('Using known tokens fallback: ' . $fallback_file);
             if (
                 $fallback_file !== KNOWN_TOKENS_CACHE_FILE
-                && file_put_contents(KNOWN_TOKENS_CACHE_FILE, $json) === false
+                && !writeCacheFile(KNOWN_TOKENS_CACHE_FILE, $json)
             ) {
                 $CollectTags->print('Known tokens cache restore failed: ' . KNOWN_TOKENS_CACHE_FILE);
             }
@@ -91,6 +97,27 @@ function fetchKnownTokensJson(string $url, int $timeout): string
     return $response;
 }
 
+function writeCacheFile(string $path, string $contents): bool
+{
+    $temporaryPath = tempnam(dirname($path), '.known-tokens-');
+    if ($temporaryPath === false) {
+        return false;
+    }
+
+    try {
+        $written = file_put_contents($temporaryPath, $contents, LOCK_EX);
+        if ($written !== strlen($contents)) {
+            return false;
+        }
+
+        return rename($temporaryPath, $path);
+    } finally {
+        if (file_exists($temporaryPath)) {
+            @unlink($temporaryPath);
+        }
+    }
+}
+
 function parseKnownTokensJson(string $json, string $source): array
 {
     $tokens = json_decode($json, true);
@@ -126,38 +153,51 @@ function buildKnownTokenKeys(array $knownTokens): array
     return $tokens;
 }
 
-$CollectTags = new MTLA\CollectTags(
-    StellarSDK::getPublicNetInstance()
-);
+function createStellarSdk(): StellarSDK
+{
+    $Stellar = new StellarSDK(HORIZON_URL);
+    $Stellar->setHttpClient(new Client([
+        'base_uri' => HORIZON_URL,
+        'connect_timeout' => HORIZON_CONNECT_TIMEOUT,
+        'timeout' => HORIZON_REQUEST_TIMEOUT,
+    ]));
 
-$CollectTags->isDebugMode(false);
-
-chdir('/data/public/');
-
-$knownTokens = loadKnownTokens($CollectTags);
-$tokens = buildKnownTokenKeys($knownTokens);
-foreach ($tokens as $token) {
-    $CollectTags->addBalanceToken($token);
+    return $Stellar;
 }
 
-$CollectTags->addSource('MTLAP', 'GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA');
-$CollectTags->addSource('MTLAC', 'GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA');
-$CollectTags->addSource('EURMTL', 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V');
+function runCrawler(): void
+{
+    if (!chdir(PUBLIC_DIRECTORY)) {
+        throw new RuntimeException('Cannot enter public directory: ' . PUBLIC_DIRECTORY);
+    }
 
-$data = $CollectTags->run();
+    $Publisher = new SnapshotPublisher('.');
+    $Publisher->acquireLock();
 
-$result = [
-    'createDate' => (new DateTime('now', new DateTimeZone('UTC')))->format('c'),
-    'knownTokens' => $knownTokens,
-    'usedSources' => $CollectTags->getSources(),
-    'accounts' => $data,
-];
+    try {
+        $CollectTags = new MTLA\CollectTags(createStellarSdk());
 
-// JSON, только базовые данные, для всех
-file_put_contents('bsn-new.json', json_encode($result, JSON_UNESCAPED_UNICODE));
-rename('bsn-new.json', 'bsn.json');
-file_put_contents('bsn-new.json,gz', gzencode(json_encode($result, JSON_UNESCAPED_UNICODE), 9));
-rename('bsn-new.json,gz', 'bsn.json.gz');
+        $CollectTags->isDebugMode(false);
+
+        $knownTokens = loadKnownTokens($CollectTags);
+        $tokens = buildKnownTokenKeys($knownTokens);
+        foreach ($tokens as $token) {
+            $CollectTags->addBalanceToken($token);
+        }
+
+        $CollectTags->addSource('MTLAP', 'GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA');
+        $CollectTags->addSource('MTLAC', 'GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA');
+        $CollectTags->addSource('EURMTL', 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V');
+
+        $data = $CollectTags->run();
+
+        $baseResult = [
+            'createDate' => (new DateTime('now', new DateTimeZone('UTC')))->format('c'),
+            'knownTokens' => $knownTokens,
+            'usedSources' => $CollectTags->getSources(),
+            'accounts' => $data,
+        ];
+        $result = $baseResult;
 
 // Тут уже красота и отсебятина
 // HTML
@@ -275,18 +315,27 @@ foreach ($result['accounts']  as $account => & $datum) {
 
 }
 
-file_put_contents(
-    'bsn-extra-new.json,gz',
-    gzencode(json_encode($result, JSON_UNESCAPED_UNICODE), 9)
-);
-rename('bsn-extra-new.json,gz', 'bsn-extra.json,gz');
+        $Twig = new Environment(new FilesystemLoader(__DIR__ . '/templates'), [
+        //    'cache' => 'twig_cache',
+        ]);
+        $Twig->addExtension(new \MTLA\TwigAppExtension($result));
+        $Template = $Twig->load('simple_html.twig');
 
-$Twig = new Environment(new FilesystemLoader(__DIR__ . '/templates'), [
-//    'cache' => 'twig_cache',
-]);
-$Twig->addExtension(new \MTLA\TwigAppExtension($result));
-$Template = $Twig->load('simple_html.twig');
-$fp = gzopen('bsn-new.html.gz', 'w9');
-gzwrite($fp, $Template->render($result));
-gzclose($fp);
-rename('bsn-new.html.gz', 'bsn.html.gz');
+        $generation = $Publisher->publish($baseResult, $result, $Template->render($result));
+        $CollectTags->print('Published snapshot generation: ' . $generation);
+    } finally {
+        $Publisher->releaseLock();
+    }
+}
+
+try {
+    runCrawler();
+} catch (Throwable $exception) {
+    fwrite(STDERR, sprintf(
+        "Crawler failed: %s in %s:%d\n",
+        $exception->getMessage(),
+        $exception->getFile(),
+        $exception->getLine()
+    ));
+    exit(1);
+}
