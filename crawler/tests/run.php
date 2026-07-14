@@ -88,6 +88,27 @@ try {
     assertSame([$targetAccount], $parsedTags['PartOf'] ?? null, 'colon-qualified link must use its base tag');
     assertSame([$selfAccount], $parsedTags['Self'] ?? null, 'self-link must be preserved');
 
+    $filterCollector = new CollectTags(new StellarSDK('https://example.invalid'));
+    $accounts = [
+        'empty' => ['balances' => ['XLM' => '5.0']],
+        'other-token-balance' => ['balances' => ['XLM' => '5.0', 'EURMTL' => '10.0']],
+        'profile' => ['balances' => ['XLM' => '5.0'], 'profile' => ['Name' => ['Profile']]],
+        'signatures' => ['balances' => ['XLM' => '5.0'], 'signatures' => [str_repeat('a', 64) => 'Document']],
+        'multisig' => ['balances' => ['XLM' => '5.0'], 'multisig' => ['signers' => [[$targetAccount, 1]]]],
+        'membership' => ['balances' => ['XLM' => '5.0', 'MTLAP' => '1.0']],
+        'tag-source' => ['balances' => ['XLM' => '5.0'], 'tags' => ['Friend' => ['tag-target']]],
+        'tag-target' => ['balances' => ['XLM' => '5.0']],
+    ];
+    $accountsProperty = new ReflectionProperty(CollectTags::class, 'accounts');
+    $accountsProperty->setValue($filterCollector, $accounts);
+    $processData = new ReflectionMethod(CollectTags::class, 'processData');
+    $filteredAccounts = $processData->invoke($filterCollector);
+    assertSame(
+        ['profile', 'signatures', 'multisig', 'membership', 'tag-source', 'tag-target'],
+        array_keys($filteredAccounts),
+        'filter must keep own BSN data, membership balances and both sides of links only'
+    );
+
     foreach (['bsn.json', 'bsn.json.gz', 'bsn-extra.json,gz', 'bsn.html.gz'] as $legacyFile) {
         file_put_contents($directory . '/' . $legacyFile, 'legacy');
     }

@@ -469,10 +469,15 @@ class CollectTags
 
         $result = [];
         foreach ($this->accounts as $id => $data) {
+            $has_own_bsn_data = !empty($data['profile'])
+                || !empty($data['signatures'])
+                || !empty($data['multisig']);
+
             if (!array_key_exists('has_tag_out', $data)
                 && !array_key_exists('has_tag_in', $data)
                 && !(array_key_exists('MTLAP', $data['balances']) && $data['balances']['MTLAP'] > 0)
                 && !(array_key_exists('MTLAC', $data['balances']) && $data['balances']['MTLAC'] > 0)
+                && !$has_own_bsn_data
             ) {
                 continue;
             }
