@@ -195,6 +195,17 @@ class CollectTags
             && preg_match('/[\x{0080}-\x{009F}]/u', $value) !== 1;
     }
 
+    public static function normalizeDataEntryTagName(string $entryName): ?string
+    {
+        $tag = trim(explode(':', $entryName, 2)[0]);
+        $tag = preg_replace('/\s*\d+\s*$/', '', $tag);
+        if ($tag === null || $tag === '' || preg_match('/^[a-z0-9_]+$/i', $tag) !== 1) {
+            return null;
+        }
+
+        return $tag;
+    }
+
     private function processStellarAccount(AccountResponse $AccountResponse): void
     {
         $account_id = $AccountResponse->getAccountId();
@@ -271,10 +282,10 @@ class CollectTags
                 continue;
             }
 
-            if (!preg_match('/^\s*(?<tag>[a-z0-9_]+?)\s*\d*\s*$/i', $key, $m)) {
+            $key = self::normalizeDataEntryTagName($key);
+            if ($key === null) {
                 continue;
             }
-            $key = $m['tag'];
 
             // Ignore Links
             if (self::validateStellarAccountIdFormat($value)) {
@@ -294,8 +305,6 @@ class CollectTags
 
     private function getTags(AccountResponse $AccountResponse): array
     {
-        $account_id = $AccountResponse->getAccountId();
-
         $tags = [];
         $Data = $AccountResponse->getData();
         foreach ($Data->getKeys() as $key) {
@@ -303,16 +312,11 @@ class CollectTags
             if (!self::validateStellarAccountIdFormat($value)) {
                 continue;
             }
-            // TODO: осторожно удалить
-            if ($value === $account_id) {
+
+            $key = self::normalizeDataEntryTagName($key);
+            if ($key === null) {
                 continue;
             }
-
-            if (!preg_match('/^\s*(?<tag>[a-z0-9_]+?)\s*\d*\s*$/i', $key, $m)) {
-                continue;
-            }
-
-            $key = $m['tag'] . (isset($m['extra']) ? ':' . $m['extra'] : '');
 
             if (!array_key_exists($key, $tags)) {
                 $tags[$key] = [];
