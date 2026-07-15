@@ -5,11 +5,12 @@ RUN apk add --no-cache \
     zlib-dev \
     libxml2-dev \
     curl-dev \
+    gmp-dev \
     git \
     unzip \
     pkgconfig
 
-RUN docker-php-ext-install bcmath curl soap zip pcntl
+RUN docker-php-ext-install bcmath curl gmp soap zip pcntl
 
 WORKDIR /usr/src/crawler
 

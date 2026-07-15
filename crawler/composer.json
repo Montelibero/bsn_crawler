@@ -4,14 +4,15 @@
   "require": {
     "php": "8.*",
     "ext-curl": "*",
+    "ext-gmp": "*",
     "ext-soap": "*",
     "ext-zlib": "*",
     "soneso/stellar-php-sdk": "^1.7.1",
     "vlucas/phpdotenv": "5.4",
     "twig/twig": "^3.21"
-  }
-,
+  },
   "require-dev": {
+    "opis/json-schema": "^2.6",
     "roave/security-advisories": "dev-latest"
   },
   "autoload": {
@@ -20,6 +21,7 @@
     }
   },
   "scripts": {
-    "test": "php tests/run.php"
+    "test": "php tests/run.php",
+    "schema": "php tests/validate-schema.php"
   }
 }

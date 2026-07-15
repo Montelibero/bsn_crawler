@@ -44,4 +44,17 @@
 
 `docker compose up`
 
-Локальные проверки: `cd crawler && composer install && composer test`.
+Локальные проверки:
+
+```shell
+cd crawler
+composer install
+composer test
+composer schema
+composer audit --locked
+```
+
+JSON Schema публичного `bsn.json` находится в `crawler/schema/bsn.schema.json`. `composer schema`
+проверяет зафиксированный fixture и отрицательные сценарии, а `composer test` — фактически
+сериализованный `bsn.json` из теста publisher. Проверки не обращаются к live Horizon или
+production-файлу.

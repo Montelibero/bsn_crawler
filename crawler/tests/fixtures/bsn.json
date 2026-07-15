@@ -1,0 +1,50 @@
+{
+  "createDate": "2026-07-15T10:00:00+00:00",
+  "knownTokens": {
+    "MTLAP": {
+      "issuer": "GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA"
+    }
+  },
+  "usedSources": [
+    "MTLAP-GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA"
+  ],
+  "accounts": {
+    "GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA": {
+      "profile": {
+        "Name": [
+          "Example account"
+        ]
+      },
+      "balances": {
+        "XLM": "10.0000000",
+        "MTLAP": "1.0000000"
+      },
+      "tags": {
+        "Self": [
+          "GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA"
+        ],
+        "PartOf": [
+          "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+        ]
+      },
+      "signatures": {
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "Document",
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": 535
+      },
+      "multisig": {
+        "thresholds": [
+          1,
+          2,
+          2
+        ],
+        "master_key": 1,
+        "signers": [
+          [
+            "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
+            1
+          ]
+        ]
+      }
+    }
+  }
+}

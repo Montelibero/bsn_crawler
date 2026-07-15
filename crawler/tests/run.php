@@ -3,6 +3,8 @@
 use MTLA\SnapshotHealthCheck;
 use MTLA\SnapshotPublisher;
 use MTLA\CollectTags;
+use Opis\JsonSchema\Errors\ErrorFormatter;
+use Opis\JsonSchema\Validator;
 use Soneso\StellarSDK\Responses\Account\AccountResponse;
 use Soneso\StellarSDK\StellarSDK;
 
@@ -39,6 +41,31 @@ function expectException(callable $callback, string $expectedClass, string $mess
     }
 
     throw new RuntimeException($message . ': exception was not thrown');
+}
+
+function assertJsonFileMatchesSchema(string $jsonPath, string $schemaPath): void
+{
+    $json = file_get_contents($jsonPath);
+    $schemaJson = file_get_contents($schemaPath);
+    if ($json === false || $schemaJson === false) {
+        throw new RuntimeException('Schema validation input cannot be read');
+    }
+
+    $document = json_decode($json, false, 512, JSON_THROW_ON_ERROR);
+    $schema = json_decode($schemaJson, false, 512, JSON_THROW_ON_ERROR);
+    $validator = new Validator();
+    $validator->setMaxErrors(20);
+    $validator->setStopAtFirstError(false);
+    $result = $validator->validate($document, $schema);
+    if ($result->isValid()) {
+        return;
+    }
+
+    $errors = (new ErrorFormatter())->format($result->error());
+    throw new RuntimeException(sprintf(
+        "Published bsn.json does not match its schema\n%s",
+        json_encode($errors, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)
+    ));
 }
 
 function removeTestDirectory(string $directory): void
@@ -116,13 +143,11 @@ try {
     $publisher = new SnapshotPublisher($directory);
     $publisher->acquireLock();
 
-    $createDate = gmdate(DATE_ATOM);
-    $snapshot = [
-        'createDate' => $createDate,
-        'knownTokens' => [],
-        'usedSources' => [],
-        'accounts' => ['GTEST' => ['profile' => ['Name' => ['Test']]]],
-    ];
+    $fixtureJson = file_get_contents(__DIR__ . '/fixtures/bsn.json');
+    assertTrue($fixtureJson !== false, 'schema fixture must be readable');
+    $snapshot = json_decode($fixtureJson, true, 512, JSON_THROW_ON_ERROR);
+    $snapshot['createDate'] = gmdate(DATE_ATOM);
+    $snapshotAccountId = array_key_first($snapshot['accounts']);
 
     $firstGeneration = $publisher->publish($snapshot, $snapshot, '<html>first</html>');
     assertTrue(is_link($directory . '/current'), 'current must be a symbolic link');
@@ -137,7 +162,7 @@ try {
 
     $currentBeforeInvalidPublish = readlink($directory . '/current');
     $invalidSnapshot = $snapshot;
-    $invalidSnapshot['accounts']['GTEST']['profile']['About'] = ["binary-\xFF"];
+    $invalidSnapshot['accounts'][$snapshotAccountId]['profile']['About'] = ["binary-\xFF"];
     expectException(
         fn () => $publisher->publish($invalidSnapshot, $invalidSnapshot, '<html>invalid</html>'),
         JsonException::class,
@@ -149,7 +174,7 @@ try {
         'failed publication must preserve the current generation'
     );
 
-    $snapshot['accounts']['GTEST']['profile']['Name'] = ['Second'];
+    $snapshot['accounts'][$snapshotAccountId]['profile']['Name'] = ['Second'];
     $secondGeneration = $publisher->publish($snapshot, $snapshot, '<html>second</html>');
     assertTrue($secondGeneration !== $firstGeneration, 'a new publication must create a new generation');
     assertSame('.snapshots/' . $secondGeneration, readlink($directory . '/current'), 'generation switch mismatch');
@@ -158,6 +183,7 @@ try {
     $publishedGzip = file_get_contents($directory . '/bsn.json.gz');
     assertTrue($publishedJson !== false && $publishedGzip !== false, 'published files must be readable');
     assertSame($publishedJson, gzdecode($publishedGzip), 'published gzip must match JSON');
+    assertJsonFileMatchesSchema($directory . '/bsn.json', __DIR__ . '/../schema/bsn.schema.json');
 
     expectException(
         fn () => (new SnapshotHealthCheck())->check($directory, 900, time() + 901),
